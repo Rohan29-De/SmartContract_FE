@@ -17,18 +17,23 @@ export default function HomePage() {
   const getWallet = async () => {
     if (window.ethereum) {
       setEthWallet(window.ethereum);
-    }
 
-    if (ethWallet) {
-      const account = await ethWallet.request({ method: "eth_accounts" });
-      handleAccount(account);
+      try {
+        const accounts = await window.ethereum.request({ method: "eth_accounts" });
+        handleAccount(accounts);
+      } catch (error) {
+        console.error("User denied account access", error);
+      }
+    } else {
+      console.log("Please install Metamask");
     }
   };
 
-  const handleAccount = (account) => {
-    if (account) {
-      console.log("Account connected: ", account);
-      setAccount(account);
+  const handleAccount = (accounts) => {
+    if (accounts.length > 0) {
+      console.log("Account connected: ", accounts[0]);
+      setAccount(accounts[0]);
+      getATMContract();
     } else {
       console.log("No account found");
     }
@@ -40,14 +45,20 @@ export default function HomePage() {
       return;
     }
 
-    const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
-    handleAccount(accounts);
-
-    // once wallet is set we can get a reference to our deployed contract
-    getATMContract();
+    try {
+      const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
+      handleAccount(accounts);
+    } catch (error) {
+      console.error("User denied account access", error);
+    }
   };
 
   const getATMContract = () => {
+    if (!ethWallet) {
+      console.error("Ethereum wallet is not set");
+      return;
+    }
+
     const provider = new ethers.providers.Web3Provider(ethWallet);
     const signer = provider.getSigner();
     const atmContract = new ethers.Contract(contractAddress, atmABI, signer);
@@ -57,7 +68,10 @@ export default function HomePage() {
 
   const getBalance = async () => {
     if (atm) {
-      setBalance((await atm.getBalance()).toNumber());
+      console.log("Fetching balance...");
+      const balance = await atm.getBalance();
+      setBalance(balance.toNumber());
+      console.log("Balance:", balance.toNumber());
     }
   };
 
@@ -65,6 +79,7 @@ export default function HomePage() {
     if (atm) {
       let tx = await atm.deposit(amountInput);
       await tx.wait();
+      console.log("Deposit transaction:", tx);
       getBalance();
     }
   };
@@ -73,32 +88,32 @@ export default function HomePage() {
     if (atm) {
       let tx = await atm.withdraw(amountInput);
       await tx.wait();
+      console.log("Withdraw transaction:", tx);
       getBalance();
     }
   };
 
-  const calculateFactorial = () => {
-    if (amountInput < 0) {
-      setFactorialResult("Factorial is not defined for negative numbers");
-      return;
-    }
+  const calculateFactorial = async () => {
+    if (atm) {
+      let tx = await atm.calculateFactorial(amountInput);
+      await tx.wait();
+      console.log("Factorial transaction:", tx);
 
-    let factorial = 1;
-    for (let i = 2; i <= amountInput; i++) {
-      factorial *= i;
+      atm.on("FactorialCalculated", (number, result) => {
+        setFactorialResult(`Factorial of ${number} is: ${result}`);
+      });
     }
-
-    setFactorialResult(`Factorial of ${amountInput} is: ${factorial}`);
   };
 
-  const checkPalindrome = () => {
-    const numberStr = String(amountInput);
-    const reversedStr = numberStr.split("").reverse().join("");
+  const checkPalindrome = async () => {
+    if (atm) {
+      let tx = await atm.checkPalindrome(amountInput);
+      await tx.wait();
+      console.log("Palindrome transaction:", tx);
 
-    if (numberStr === reversedStr) {
-      setPalindromeResult(`${amountInput} is a palindrome.`);
-    } else {
-      setPalindromeResult(`${amountInput} is not a palindrome.`);
+      atm.on("PalindromeChecked", (number, isPalindrome) => {
+        setPalindromeResult(`${number} is ${isPalindrome ? "a" : "not a"} palindrome.`);
+      });
     }
   };
 
@@ -107,17 +122,15 @@ export default function HomePage() {
   };
 
   const initUser = () => {
-    // Check to see if user has Metamask
     if (!ethWallet) {
       return <p>Please install Metamask in order to use this ATM.</p>;
     }
 
-    // Check to see if user is connected. If not, connect to their account
     if (!account) {
       return <button onClick={connectAccount}>Please connect your Metamask wallet</button>;
     }
 
-    if (balance == undefined) {
+    if (balance === undefined) {
       getBalance();
     }
 
@@ -129,7 +142,7 @@ export default function HomePage() {
           <input
             type="number"
             value={amountInput}
-            onChange={(e) => setAmountInput(e.target.value)}
+            onChange={(e) => setAmountInput(parseInt(e.target.value))}
           />
           <button onClick={deposit}>Deposit</button>
           <button onClick={withdraw}>Withdraw</button>
@@ -173,8 +186,7 @@ export default function HomePage() {
     </main>
   );
 }
-//npm i
-//npx hardhat node
-//npx hardhat run scripts/deploy.js --network localhost
-//npm run dev
-
+// npm i
+// npx hardhat node
+// npx hardhat run scripts/deploy.js --network localhost
+// npm run dev
